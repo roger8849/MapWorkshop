@@ -1,5 +1,5 @@
 <resources>
     <string name="app_name">MapWorkshop</string>
     <string name="title_activity_maps">Map</string>
-    <string name="Address">Name</string>
+    <string name="Address">Address</string>
 </resources>
