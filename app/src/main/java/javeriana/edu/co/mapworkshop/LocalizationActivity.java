@@ -2,6 +2,7 @@ package javeriana.edu.co.mapworkshop;
 
 import android.Manifest;
 import android.app.Activity;
+import android.content.Context;
 import android.content.pm.PackageManager;
 import android.location.Location;
 import android.os.Build;
@@ -24,6 +25,7 @@ import com.google.android.gms.location.LocationResult;
 import com.google.android.gms.location.LocationServices;
 import java.io.BufferedWriter;
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.FileWriter;
 import java.io.Writer;
 import java.util.ArrayList;
@@ -142,7 +144,6 @@ public class LocalizationActivity extends AppCompatActivity {
     }
   }
 
-  @RequiresApi(api = Build.VERSION_CODES.O)
   public void addLocationsToLocationsList(View view) {
     MyLocation myLocation = new MyLocation(latitude.getText().toString(),
         longitude.getText().toString());
@@ -152,15 +153,14 @@ public class LocalizationActivity extends AppCompatActivity {
 
   }
 
-  @RequiresApi(api = Build.VERSION_CODES.O)
   private void writeJSONObject(MyLocation myLocation) {
     Writer output = null;
     String filename = "locations.json";
     try {
-      File file = new File(getBaseContext().getExternalFilesDir(null), filename);
+      File file = new File(getBaseContext().getFilesDir(), filename);
       Log.i("LOCATION", "File location: " + file);
       output = new BufferedWriter(new FileWriter(file));
-      output.write(locationListValues.toString());
+      output.write(myLocation.toJSON().toString());
       output.close();
       Toast.makeText(getApplicationContext(), "Location saved",
           Toast.LENGTH_LONG).show();
