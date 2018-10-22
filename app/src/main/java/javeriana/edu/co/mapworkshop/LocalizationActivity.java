@@ -1,15 +1,12 @@
 package javeriana.edu.co.mapworkshop;
 
 import android.Manifest;
-import android.app.Activity;
-import android.content.Context;
+import android.content.Intent;
+import android.content.IntentSender;
 import android.content.pm.PackageManager;
 import android.location.Location;
-import android.os.Build;
 import android.os.Bundle;
 import android.support.annotation.NonNull;
-import android.support.annotation.RequiresApi;
-import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
@@ -18,14 +15,23 @@ import android.widget.ArrayAdapter;
 import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Toast;
+import com.google.android.gms.common.api.ApiException;
+import com.google.android.gms.common.api.CommonStatusCodes;
+import com.google.android.gms.common.api.ResolvableApiException;
 import com.google.android.gms.location.FusedLocationProviderClient;
 import com.google.android.gms.location.LocationCallback;
 import com.google.android.gms.location.LocationRequest;
 import com.google.android.gms.location.LocationResult;
 import com.google.android.gms.location.LocationServices;
+import com.google.android.gms.location.LocationSettingsRequest;
+import com.google.android.gms.location.LocationSettingsResponse;
+import com.google.android.gms.location.LocationSettingsStatusCodes;
+import com.google.android.gms.location.SettingsClient;
+import com.google.android.gms.tasks.OnFailureListener;
+import com.google.android.gms.tasks.OnSuccessListener;
+import com.google.android.gms.tasks.Task;
 import java.io.BufferedWriter;
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.FileWriter;
 import java.io.Writer;
 import java.util.ArrayList;
@@ -34,11 +40,13 @@ import javeriana.edu.co.mapworkshop.dto.MyLocation;
 
 public class LocalizationActivity extends AppCompatActivity {
 
-  private final static int CONTACTS_PERMISSION = 0;
-  private final static int LOCATION_PERMISSION = 1;
   private static final double RADIUS_OF_EARTH_KM = 6371;
   private static final double AIRPORT_LATITUDE = 4.6889695;
   private static final double AIRPORT_LONGITUDE = -74.1398821;
+
+  protected static final int REQUEST_CHECK_SETTINGS = 0x1;
+  private final static int LOCATION_PERMISSION = 0;
+
 
   private TextView latitude, longitude, altitude, distanceToAirport;
 
@@ -81,15 +89,17 @@ public class LocalizationActivity extends AppCompatActivity {
     arrayAdapter = new ArrayAdapter<String>(this, android.R.layout.simple_list_item_1,
         locationListValues);
     locationList.setAdapter(arrayAdapter);
-    locationRequest = createLocationRequest();
-
-    requestPermission(this, Manifest.permission.READ_CONTACTS, "Contact access needed.",
-        CONTACTS_PERMISSION);
-    requestPermission(this, Manifest.permission.ACCESS_FINE_LOCATION, "Location access needed.",
-        LOCATION_PERMISSION);
+    Intent mainActivity = getIntent();
+    locationRequest = mainActivity.getParcelableExtra("locationRequest");
+    turnOnLocation();
 
     fusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
 
+    initLocationCallback();
+
+  }
+
+  private void initLocationCallback() {
     locationCallback = new LocationCallback() {
       @Override
       public void onLocationResult(LocationResult locationResult) {
@@ -108,40 +118,42 @@ public class LocalizationActivity extends AppCompatActivity {
         }
       }
     };
-
   }
 
+  public void turnOnLocation() {
+    LocationSettingsRequest.Builder builder = new
+        LocationSettingsRequest.Builder().addLocationRequest(locationRequest);
+    SettingsClient client = LocationServices.getSettingsClient(this);
+    Task<LocationSettingsResponse> task = client.checkLocationSettings(builder.build());
 
-  @Override
-  public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions,
-      @NonNull int[] grantResults) {
-    super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-    switch (requestCode) {
-      case CONTACTS_PERMISSION: {
-        initView();
-        break;
+    task.addOnSuccessListener(this, new OnSuccessListener<LocationSettingsResponse>() {
+      @Override
+      public void onSuccess(LocationSettingsResponse locationSettingsResponse) {
+        startLocationUpdates(); //Todas las condiciones para recibir localizaciones
       }
-    }
-  }
+    });
 
-  private LocationRequest createLocationRequest() {
-    LocationRequest locationRequest = new LocationRequest();
-    locationRequest.setInterval(10000);
-    locationRequest.setFastestInterval(5000);
-    locationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
-    return locationRequest;
-  }
-
-  private void requestPermission(Activity context, String permission, String explanation,
-      int requestId) {
-    if (ContextCompat.checkSelfPermission(context, permission)
-        != PackageManager.PERMISSION_GRANTED) {
-      // Should we show an explanation?
-      if (ActivityCompat.shouldShowRequestPermissionRationale(context, permission)) {
-        Toast.makeText(context, explanation, Toast.LENGTH_LONG).show();
+    task.addOnFailureListener(this, new OnFailureListener() {
+      @Override
+      public void onFailure(@NonNull Exception e) {
+        int statusCode = ((ApiException) e).getStatusCode();
+        switch (statusCode) {
+          case CommonStatusCodes.RESOLUTION_REQUIRED:
+            // Location settings are not satisfied, but this can be fixed by showing the user a dialog.
+            try {// Show the dialog by calling startResolutionForResult(), and check the result in onActivityResult().
+              ResolvableApiException resolvable = (ResolvableApiException) e;
+              resolvable.startResolutionForResult(LocalizationActivity.this,
+                  REQUEST_CHECK_SETTINGS);
+            } catch (IntentSender.SendIntentException sendEx) {
+              // Ignore the error.
+            }
+            break;
+          case LocationSettingsStatusCodes.SETTINGS_CHANGE_UNAVAILABLE:
+            // Location settings are not satisfied. No way to fix the settings so we won't show the dialog.
+            break;
+        }
       }
-      ActivityCompat.requestPermissions(context, new String[]{permission}, requestId);
-    }
+    });
   }
 
   public void addLocationsToLocationsList(View view) {
@@ -166,17 +178,6 @@ public class LocalizationActivity extends AppCompatActivity {
           Toast.LENGTH_LONG).show();
     } catch (Exception e) {
       Toast.makeText(getBaseContext(), e.getMessage(), Toast.LENGTH_LONG).show();
-    }
-  }
-
-  /*Contacts shit.*/
-  private void initView() {
-    if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS)
-        == PackageManager.PERMISSION_GRANTED) {
-      Log.i("INITVIEW", "pasé por acá");
-
-    } else {
-
     }
   }
 
